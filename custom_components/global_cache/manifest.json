@@ -1,0 +1,12 @@
+{
+  "domain": "global_cache",
+  "name": "Global Caché iTach",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/your-username/ha-global-cache",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/your-username/ha-global-cache/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

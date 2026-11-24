@@ -1,0 +1,43 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to a Global Caché iTach",
+        "description": "Enter the IP address of your iTach unit. Use a DHCP reservation or static IP so it doesn't change.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "name": "Name (optional)"
+        }
+      },
+      "reconfigure": {
+        "title": "Update iTach connection",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to the unit. Check the IP address and that the unit is powered on.",
+      "no_supported_modules": "The unit responded but reports no relay or IR modules.",
+      "unknown": "Unexpected response from the unit."
+    },
+    "abort": {
+      "already_configured": "This unit is already configured.",
+      "reconfigure_successful": "Connection updated."
+    }
+  },
+  "services": {
+    "pulse": {
+      "name": "Pulse relay",
+      "description": "Closes the relay for a short time, then opens it again.",
+      "fields": {
+        "duration": {
+          "name": "Duration",
+          "description": "How long to keep the relay closed, in seconds."
+        }
+      }
+    }
+  }
+}
