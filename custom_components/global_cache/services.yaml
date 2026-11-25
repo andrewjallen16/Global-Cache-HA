@@ -12,3 +12,9 @@ pulse:
           max: 60
           step: 0.1
           unit_of_measurement: s
+
+stop_ir:
+  target:
+    entity:
+      integration: global_cache
+      domain: remote

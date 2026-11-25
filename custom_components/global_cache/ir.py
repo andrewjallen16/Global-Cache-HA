@@ -73,3 +73,48 @@ def _pronto_to_gc(text: str) -> str:
     pairs = words[4:needed]
     offset = 2 * once + 1 if repeat else 1
     return f"{freq},1,{offset}," + ",".join(str(p) for p in pairs)
+
+
+GC_MAX_CYCLES = 65535
+TRAILING_GAP_US = 40_000
+DEFAULT_CARRIER_HZ = 38_000
+
+
+def timings_to_gc(raw_timings, modulation: int | None) -> str:
+    """Convert Home Assistant ``infrared`` raw timings to a sendir body.
+
+    ``raw_timings`` comes from ``Command.get_raw_timings()``. Current
+    infrared-protocols releases return signed microseconds (positive = mark,
+    negative = space); older ones returned objects with ``high_us``/``low_us``.
+    Both are accepted.
+    """
+    freq = int(modulation or DEFAULT_CARRIER_HZ)
+    freq = max(20_000, min(500_000, freq))
+
+    signed: list[int] = []
+    for item in raw_timings:
+        if hasattr(item, "high_us"):
+            signed.extend((int(item.high_us), -int(item.low_us)))
+        else:
+            signed.append(int(item))
+
+    merged: list[int] = []
+    for value in signed:
+        if value == 0:
+            continue
+        if merged and (merged[-1] > 0) == (value > 0):
+            merged[-1] += value
+        else:
+            merged.append(value)
+
+    while merged and merged[0] < 0:  # a signal has to begin with a mark
+        merged.pop(0)
+    if not merged:
+        raise ValueError("Command contains no timings")
+    if merged[-1] > 0:  # GC wants on/off pairs; close with an inter-frame gap
+        merged.append(-TRAILING_GAP_US)
+
+    cycles = [
+        max(1, min(GC_MAX_CYCLES, round(abs(v) * freq / 1_000_000))) for v in merged
+    ]
+    return f"{freq},1,1," + ",".join(str(c) for c in cycles)

@@ -15,6 +15,7 @@ _LOGGER = logging.getLogger(__name__)
 
 IR_TIMEOUT = 15
 IR_BUSY_RETRIES = 4
+CONNECT_ATTEMPTS = 2
 
 ERROR_CODES = {
     "001": "Invalid command",
@@ -135,14 +136,21 @@ class GlobalCacheClient:
     @asynccontextmanager
     async def _session(self) -> AsyncIterator[_Session]:
         async with self._lock:
-            try:
-                reader, writer = await asyncio.wait_for(
-                    asyncio.open_connection(self.host, self.port), self._timeout
-                )
-            except (OSError, TimeoutError) as err:
+            last_err: Exception | None = None
+            for attempt in range(CONNECT_ATTEMPTS):
+                try:
+                    reader, writer = await asyncio.wait_for(
+                        asyncio.open_connection(self.host, self.port), self._timeout
+                    )
+                    break
+                except (OSError, TimeoutError) as err:
+                    last_err = err
+                    if attempt + 1 < CONNECT_ATTEMPTS:
+                        await asyncio.sleep(0.5)
+            else:
                 raise GlobalCacheConnectionError(
-                    f"Cannot connect to {self.host}:{self.port}: {err}"
-                ) from err
+                    f"Cannot connect to {self.host}:{self.port}: {last_err or 'timed out'}"
+                ) from last_err
             try:
                 yield _Session(reader, writer, self._timeout)
             except (OSError, TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError) as err:
@@ -164,20 +172,32 @@ class GlobalCacheClient:
                 modules.append(Module(int(match[1]), int(match[2]), match[3].upper()))
         return modules
 
-    async def get_version(self) -> str | None:
-        try:
-            async with self._session() as session:
-                lines = await session.send("getversion", lambda l: True)
-            return lines[-1]
-        except GlobalCacheError:
-            return None
+    async def get_version(self) -> str:
+        """Firmware version string. Also serves as a cheap heartbeat."""
+        async with self._session() as session:
+            lines = await session.send("getversion", lambda l: True)
+        return lines[-1]
+
+    async def get_ir_modes(self, connectors: list[str]) -> dict[str, str]:
+        """Return the configured mode of each IR connector (IR, SENSOR, ...)."""
+        modes: dict[str, str] = {}
+        async with self._session() as session:
+            for connector in connectors:
+                try:
+                    lines = await session.send(
+                        f"get_IR,{connector}", lambda l: l.upper().startswith("IR,")
+                    )
+                    modes[connector] = lines[-1].rsplit(",", 1)[-1].strip().upper()
+                except GlobalCacheCommandError:
+                    modes[connector] = "IR"  # older firmware without get_IR
+        return modes
 
     # ---------------------------------------------------------------- relays
     @staticmethod
     def _state_from(line: str) -> bool:
         return line.rsplit(",", 1)[-1].strip() == "1"
 
-    async def get_relay_states(self, connectors: list[str]) -> dict[str, bool]:
+    async def get_states(self, connectors: list[str]) -> dict[str, bool]:
         states: dict[str, bool] = {}
         async with self._session() as session:
             for connector in connectors:
@@ -211,6 +231,13 @@ class GlobalCacheClient:
                 return
             await asyncio.sleep(0.3 * (attempt + 1))
         raise GlobalCacheBusyError(f"IR connector {connector} stayed busy")
+
+    async def stop_ir(self, connector: str) -> None:
+        """Abort an IR transmission in progress on a connector."""
+        async with self._session() as session:
+            await session.send(
+                f"stopir,{connector}", lambda l: l.lower().startswith("stopir")
+            )
 
     async def learn_ir(self, timeout: float = 30) -> str:
         """Enable the IR learner and wait for a code. Returns a normalised body."""

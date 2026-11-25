@@ -1,74 +1,73 @@
 # Global Caché iTach for Home Assistant
 
-Custom integration for Global Caché **iTach** units over the local network (TCP port 4998).
+Local-network integration for Global Caché **iTach** units (TCP port 4998).
 
 | Hardware | Entities |
 |---|---|
-| iTach IP2CC (Ethernet relay) | one `switch` per relay, plus a `global_cache.pulse` service |
-| iTach IP2IR (Ethernet IR) | one `remote` per IR connector |
-
-Units are polled every 15 s for relay state. IR is send-only (optionally learn, see below).
+| iTach IP2CC (Ethernet relay) | one `switch` per relay + `global_cache.pulse` service |
+| iTach IP2IR (Ethernet IR) | per IR connector: a `remote` and an `infrared` emitter (HA 2026.4+) |
+| IR connector set to *sensor* mode | `binary_sensor` |
 
 ## Install
 
-1. Copy `custom_components/global_cache` into your HA `config/custom_components/` folder
-   (or add this repo to HACS as a custom repository).
-2. Restart Home Assistant.
-3. **Settings → Devices & Services → Add Integration → "Global Caché iTach"**, enter the unit's IP.
-   Repeat for each unit. Use DHCP reservations so IPs don't change; if one does, use *Reconfigure*.
+1. Copy `custom_components/global_cache` into `config/custom_components/` (or add the repo to HACS as a custom repository) and restart.
+2. **Settings → Devices & services → Add integration → Global Caché iTach.**
+   The flow listens for ~10 s for units on your network; pick one or choose *Enter address manually*.
+   Units may also appear under *Discovered* automatically (DHCP).
 
-Requires Home Assistant 2024.12 or newer.
+Requires Home Assistant 2025.1+. The `infrared` emitters need 2026.4+ and are skipped on older versions.
+
+If discovery finds nothing (Docker bridge networking, VLANs, multicast blocked), use manual entry with a DHCP reservation. Discovered units are tracked by MAC address so later IP changes are followed automatically; for manually added units use ⋮ → *Reconfigure*.
+
+## Options
+
+**Configure** on the integration card: poll interval (default 15 s) and network timeout (default 5 s).
 
 ## Relays
 
-Each relay is a normal switch. For momentary devices (garage door, projector screen, gate):
-
 ```yaml
-action: global_cache.pulse
-target:
-  entity_id: switch.itach_relay_1_1
-data:
-  duration: 0.5
+action: global_cache.pulse     # momentary: gate, garage door, screen
+target: { entity_id: switch.itach_relay_3_1 }
+data: { duration: 0.5 }
 ```
 
 ## IR
 
-`remote.send_command` accepts any of these code formats (use whichever you already have):
+### Using brand integrations (HA 2026.4+)
+Integrations built on Home Assistant's `infrared` platform (e.g. LG Infrared) let you choose an emitter during setup. Pick **IR emitter 1:x** from your iTach.
 
+### Using `remote.send_command`
 ```yaml
 # Pronto hex
 action: remote.send_command
 target: { entity_id: remote.itach_ir_1_1 }
-data:
-  command: "0000 006d 0022 0002 0157 00ac 0015 0015 ..."
+data: { command: "0000 006d 0022 0002 0157 00ac ..." }
 
-# Global Caché sendir string (connector/ID fields are rewritten for you)
-data:
-  command: "sendir,1:1,1,38000,1,1,342,171,21,21,21,64,..."
+# Global Caché sendir string (connector/ID are rewritten for you)
+data: { command: "sendir,1:1,1,38000,1,1,342,171,21,21,..." }
 
-# A name you learned earlier
-data:
-  device: tv
-  command: power
+# A command you learned
+data: { device: tv, command: power }
 ```
-
-Optional `num_repeats` and `delay_secs` work as usual and accept multiple commands in a list.
+`num_repeats` and `delay_secs` work as usual; `global_cache.stop_ir` aborts a transmission in progress.
 
 ### Learning (experimental)
-
 ```yaml
 action: remote.learn_command
 target: { entity_id: remote.itach_ir_1_1 }
-data:
-  device: tv
-  command: [power, volume_up]
-  timeout: 30
+data: { device: tv, command: [power, volume_up], timeout: 30 }
 ```
+Hold the original remote at the unit's IR learner and press the button when the notification appears. Needs hardware with an IR learner; otherwise you'll see "learner is not available". Codes are stored in `.storage/`.
 
-Point the original remote at the unit's IR learner window; a notification prompts you for each command. Learned codes are stored in `.storage/` and used with `remote.send_command` + `device`. This only works on units that have an IR learner; otherwise you'll get "learner is not available". `remote.delete_command` removes stored codes.
+## Connector modes
+Each iTach IR connector can be IR, IR blaster, sensor or LED lighting (set on the unit's web page). Modes are read at setup — **reload the integration after changing one**. LED-lighting connectors are ignored.
 
-## Notes
+## Not (yet) supported
+Serial ports (IP2SL / GC-100), GC-100 relays/IR beyond what `getdevices` reports, Global Connect IR receivers, per-command button entities, sensor push notifications (sensors are polled).
 
-- Each IR connector on an iTach can be configured as IR out, IR blaster, sensor, etc. via the unit's web page. Only connectors set to IR output will transmit.
-- Commands are serialized per unit; if a connector reports busy, sends are retried automatically.
-- Enable debug logs with `logger: logs: custom_components.global_cache: debug` to see the raw API traffic.
+## Development
+```
+pip install pytest
+pytest
+```
+The tests need no Home Assistant install: they exercise the TCP client against a fake iTach, plus IR conversion and beacon parsing.

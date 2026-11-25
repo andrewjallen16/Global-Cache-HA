@@ -11,12 +11,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import GlobalCacheConfigEntry, GlobalCacheData
 from .api import GlobalCacheError
 from .const import ATTR_DURATION, SERVICE_PULSE
-from .coordinator import GlobalCacheCoordinator
+from .entity import GlobalCacheEntity
 
 
 async def async_setup_entry(
@@ -26,10 +25,7 @@ async def async_setup_entry(
 ) -> None:
     data = entry.runtime_data
     async_add_entities(
-        GlobalCacheRelay(entry.entry_id, data, connector)
-        for module in data.modules
-        if module.is_relay
-        for connector in module.connectors
+        GlobalCacheRelay(entry.entry_id, data, c) for c in data.relay_connectors
     )
 
     platform = entity_platform.async_get_current_platform()
@@ -44,18 +40,11 @@ async def async_setup_entry(
     )
 
 
-class GlobalCacheRelay(CoordinatorEntity[GlobalCacheCoordinator], SwitchEntity):
+class GlobalCacheRelay(GlobalCacheEntity, SwitchEntity):
     """A single relay."""
 
-    _attr_has_entity_name = True
-
     def __init__(self, entry_id: str, data: GlobalCacheData, connector: str) -> None:
-        super().__init__(data.coordinator)
-        self._client = data.client
-        self._connector = connector
-        self._attr_unique_id = f"{entry_id}_relay_{connector}"
-        self._attr_name = f"Relay {connector}"
-        self._attr_device_info = data.device_info
+        super().__init__(entry_id, data, connector, "relay", "Relay")
 
     @property
     def is_on(self) -> bool | None:

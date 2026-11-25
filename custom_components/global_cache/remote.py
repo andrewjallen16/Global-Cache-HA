@@ -19,11 +19,13 @@ from homeassistant.components.remote import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import GlobalCacheConfigEntry, GlobalCacheData
 from .api import GlobalCacheError
-from .const import DOMAIN, LEARN_TIMEOUT
+from .const import DOMAIN, LEARN_TIMEOUT, SERVICE_STOP_IR
+from .entity import GlobalCacheEntity
 from .ir import parse_ir_code
 
 
@@ -34,35 +36,25 @@ async def async_setup_entry(
 ) -> None:
     data = entry.runtime_data
     async_add_entities(
-        GlobalCacheRemote(hass, entry.entry_id, data, connector)
-        for module in data.modules
-        if module.is_ir
-        for connector in module.connectors
+        GlobalCacheRemote(entry.entry_id, data, c) for c in data.ir_connectors
     )
+    platform = entity_platform.async_get_current_platform()
+    platform.async_register_entity_service(SERVICE_STOP_IR, {}, "async_stop_ir")
 
 
-class GlobalCacheRemote(RemoteEntity):
+class GlobalCacheRemote(GlobalCacheEntity, RemoteEntity):
     """One IR connector."""
 
-    _attr_has_entity_name = True
-    _attr_should_poll = False
     _attr_supported_features = (
         RemoteEntityFeature.LEARN_COMMAND | RemoteEntityFeature.DELETE_COMMAND
     )
 
-    def __init__(
-        self, hass: HomeAssistant, entry_id: str, data: GlobalCacheData, connector: str
-    ) -> None:
-        self.hass = hass
+    def __init__(self, entry_id: str, data: GlobalCacheData, connector: str) -> None:
+        super().__init__(entry_id, data, connector, "ir", "IR")
         self._entry_id = entry_id
-        self._client = data.client
         self._codes = data.codes
-        self._connector = connector
-        self._attr_unique_id = f"{entry_id}_ir_{connector}"
-        self._attr_name = f"IR {connector}"
-        self._attr_device_info = data.device_info
 
-    # An IR output has no on/off state, so always report "on".
+    # An IR output has no on/off state, so it is "on" whenever it is reachable.
     @property
     def is_on(self) -> bool:
         return True
@@ -102,6 +94,13 @@ class GlobalCacheRemote(RemoteEntity):
                 sent += 1
                 if sent < total:
                     await asyncio.sleep(delay)
+
+    async def async_stop_ir(self) -> None:
+        """Abort an IR transmission in progress."""
+        try:
+            await self._client.stop_ir(self._connector)
+        except GlobalCacheError as err:
+            raise HomeAssistantError(f"Failed to stop IR: {err}") from err
 
     async def async_learn_command(self, **kwargs: Any) -> None:
         device = kwargs.get(ATTR_DEVICE)
