@@ -1,24 +1,13 @@
 {
   "domain": "global_cache",
   "name": "Global Caché iTach",
-  "codeowners": "@andrewjallen16"
+  "codeowners": ["@andrewjallen16"],
   "config_flow": true,
-  "dhcp": [
-    {
-      "hostname": "globalcache_*"
-    },
-    {
-      "macaddress": "000C1E*"
-    }
-  ],
+  "dhcp": [{"hostname": "globalcache_*"},{"macaddress": "000C1E*"}],
   "documentation": "https://github.com/andrewjallen16/Global-Cache-HA",
   "integration_type": "device",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/andrewjallen16/Global-Cache-HA/issues",
-  "documentation": "https://github.com/andrewjallen16/ha-global-cache",
-  "integration_type": "device",
-  "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/andrewjallen16/ha-global-cache/issues",
   "requirements": [],
   "version": "0.2.0"
 }
